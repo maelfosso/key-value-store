@@ -134,3 +134,32 @@ func BenchmarkGet(b *testing.B) {
 		Get(context.Background(), "key1")
 	}
 }
+
+func TestGetSetDelete(t *testing.T) {
+	makeStorage(t)
+	defer cleanupStorage(t)
+	ctx := context.Background()
+
+	key := "key"
+	value := "value"
+
+	if out, err := Get(ctx, key); err != nil || out != "" {
+		t.Fatalf("First Get returned unexpected result, out: %q, error: %s", out, err)
+	}
+
+	if err := Set(ctx, key, value); err != nil {
+		t.Fatalf("Set returned unexpeced error: %s", err)
+	}
+
+	if out, err := Get(ctx, key); err != nil || out != value {
+		t.Fatalf("Second Get returned unexpecfted result, out: %q, error: %s", out, err)
+	}
+
+	if err := Delete(ctx, key); err != nil {
+		t.Fatalf("Delete returned unexpected error: %s", err)
+	}
+
+	if out, err := Get(ctx, key); err != nil || out != "" {
+		t.Fatalf("Third Get returned unexpected result, out: %q, error: %s", out, err)
+	}
+}

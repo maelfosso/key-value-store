@@ -119,9 +119,7 @@ func Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	log.Println("Before : ", data)
 	delete(data, key)
-	log.Println("After: ", data)
 
 	err = saveData(ctx, data)
 	if err != nil {
