@@ -12,8 +12,7 @@ import (
 )
 
 func TestJSON(t *testing.T) {
-	// in := map[string]string{"hello": "world"}
-	// out := `{"hello":"world"}`
+	t.Parallel()
 
 	header := http.Header{}
 	headerKey := "Content-Type"
@@ -54,6 +53,8 @@ func TestJSON(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	t.Parallel()
+
 	makeStorage(t)
 	defer cleanupStorage(t)
 
@@ -92,19 +93,44 @@ func TestGet(t *testing.T) {
 	}
 }
 
-func makeStorage(t *testing.T) {
+func makeStorage(tb testing.TB) {
 	err := os.Mkdir("testdata", 0755)
 	if err != nil && !os.IsExist(err) {
-		t.Fatalf("Couldn't create directory testdata: %s", err)
+		tb.Fatalf("Couldn't create directory testdata: %s", err)
 	}
 
 	StoragePath = "testdata"
 }
 
-func cleanupStorage(t *testing.T) {
+func cleanupStorage(tb testing.TB) {
 	if err := os.RemoveAll(StoragePath); err != nil {
-		t.Errorf("Failed to delete storage path: %s", StoragePath)
+		tb.Errorf("Failed to delete storage path: %s", StoragePath)
 	}
 
 	StoragePath = "/tmp/kv"
+}
+
+func BenchmarkGet(b *testing.B) {
+	makeStorage(b)
+	defer cleanupStorage(b)
+
+	kvStore := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key4": "value4",
+	}
+	encodedStore := map[string]string{}
+	for key, value := range kvStore {
+		encodedKey := base64.URLEncoding.EncodeToString([]byte(key))
+		encodedValue := base64.URLEncoding.EncodeToString([]byte(value))
+		encodedStore[encodedKey] = encodedValue
+	}
+
+	fileContents, _ := json.Marshal(encodedStore)
+	os.WriteFile(StoragePath+"/data.json", fileContents, 0644)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Get(context.Background(), "key1")
+	}
 }
