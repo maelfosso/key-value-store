@@ -77,9 +77,9 @@ func main() {
 
 // JSON encodes data to json and writes it to the http response
 func JSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	b, err := json.Marshal(data)
 	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		JSON(w, map[string]string{"error": err.Error()})
 		return
