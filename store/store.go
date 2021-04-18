@@ -29,16 +29,42 @@ type Config struct {
 	fsm  *fsm
 }
 
-func (c *Config) Set(ctx context.Context, key, value string) error {
-	return nil
+type Command struct {
+	Action string
+	Key    string
+	Value  string
 }
 
-func (c *Config) Delete(ctx context.Context, key string) error {
-	return nil
+func (cfg *Config) Set(ctx context.Context, key, value string) error {
+	if cfg.raft.State() != raft.Leader {
+		return fmt.Errorf("not leader")
+	}
+
+	cmd, err := json.Marshal(Command{Action: "set", Key: key, Value: value})
+	if err != nil {
+		return fmt.Errorf("marshaling command: %w", err)
+	}
+
+	l := cfg.raft.Apply(cmd, time.Minute)
+	return l.Error()
 }
 
-func (c *Config) Get(ctx context.Context, key string) (string, error) {
-	return "", nil
+func (cfg *Config) Delete(ctx context.Context, key string) error {
+	if cfg.raft.State() != raft.Leader {
+		return fmt.Errorf("not leader")
+	}
+
+	cmd, err := json.Marshal(Command{Action: "delete", Key: "key"})
+	if err != nil {
+		return fmt.Errorf("marshalling command: %w", err)
+	}
+
+	l := cfg.raft.Apply(cmd, time.Minute)
+	return l.Error()
+}
+
+func (cfg *Config) Get(ctx context.Context, key string) (string, error) {
+	return cfg.fsm.localGet(ctx, key)
 }
 
 func (cfg *Config) AddHandler() func(w http.ResponseWriter, r *http.Request) {
