@@ -4,16 +4,23 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hashicorp/go-hclog"
+	"github.com/maelfosso/key-value-store/store"
 )
 
-var StoragePath = "/tmp"
+var (
+	StoragePath = "/tmp/kv"
+	Host        = "localhost"
+	RaftPort    = "8081"
+	log         = hclog.Default()
+)
 
 func main() {
 	// Get port from env variables or set to 8080
@@ -21,17 +28,43 @@ func main() {
 	if fromEnv := os.Getenv("PORT"); fromEnv != "" {
 		port = fromEnv
 	}
-	log.Printf("Starting up on http://localhost:%s", port)
+	log.Info(fmt.Sprintf("Starting up on http://localhost:%s", port))
+
+	if fromEnv := os.Getenv("STORAGE_PATH"); fromEnv != "" {
+		StoragePath = fromEnv
+	}
+
+	if fromEnv := os.Getenv("RAFT_ADDRESS"); fromEnv != "" {
+		Host = fromEnv
+	}
+
+	if fromEnv := os.Getenv("RAFT_PORT"); fromEnv != "" {
+		RaftPort = fromEnv
+	}
+
+	leader := os.Getenv("RAFT_LEADER")
+	config, err := store.NewRaftSetup(StoragePath, Host, RaftPort, leader)
+	if err != nil {
+		log.Error("couldn't set up Raft", "error", err)
+		os.Exit(1)
+	}
 
 	r := chi.NewRouter()
+
+	r.Use(config.Middleware)
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello world.\n"))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		jw := json.NewEncoder(w)
+		jw.Encode(map[string]string{"hello": "world"})
 	})
+
+	r.Post("/raft/add", config.AddHandler())
 
 	r.Get("/key/{key}", func(w http.ResponseWriter, r *http.Request) {
 		key := chi.URLParam(r, "key")
 
-		data, err := Get(r.Context(), key)
+		data, err := config.Get(r.Context(), key)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			JSON(w, map[string]string{"error": err.Error()})
@@ -44,7 +77,7 @@ func main() {
 	r.Delete("/key/{key}", func(w http.ResponseWriter, r *http.Request) {
 		key := chi.URLParam(r, "key")
 
-		err := Delete(r.Context(), key)
+		err := config.Delete(r.Context(), key)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			JSON(w, map[string]string{"error": err.Error()})
@@ -55,6 +88,8 @@ func main() {
 	})
 
 	r.Post("/key/{key}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
 		key := chi.URLParam(r, "key")
 
 		body, err := io.ReadAll(r.Body)
@@ -64,15 +99,17 @@ func main() {
 			return
 		}
 
-		err = Set(r.Context(), key, string(body))
+		err = config.Set(r.Context(), key, string(body))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			JSON(w, map[string]string{"error": err.Error()})
 			return
 		}
+
+		JSON(w, map[string]string{"status": "success"})
 	})
 
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	http.ListenAndServe(":"+port, r)
 }
 
 // JSON encodes data to json and writes it to the http response
